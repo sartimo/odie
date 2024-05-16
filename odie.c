@@ -3,6 +3,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 enum {
   PRE    = 1 << 0,
@@ -175,41 +179,90 @@ static int process_line(FILE *fp, char *line, int flags) {
   return flags;
 }
 
-int main(int argc, char **argv) {
-  FILE *css = NULL;
-  FILE *in = stdin;
-
-  for (int i = 1; i < argc; i++) {
-    if (strstr(argv[i], ".css")) {
-      css = fopen(argv[i], "rb");
-      if (!css) { panic("failed to open .css file"); }
-    } else {
-      in = fopen(argv[i], "rb");
-      if (!in) { panic("failed to open input file"); }
+static void process_file(const char *filename) {
+    FILE *in = fopen(filename, "rb");
+    if (!in) {
+        fprintf(stderr, "Failed to open input file: %s\n", filename);
+        return;
     }
-  }
 
-  fprintf(stdout, "<html><head><meta charset=\"utf-8\"><style>");
-  if (css) {
-    write_fp(stdout, css);
-  } else {
-    fprintf(stdout,
-      "body{margin:60 auto;max-width:750px;line-height:1.6;"
-      "font-family:Open Sans,Arial;color:#444;padding:0 10px;}"
-      "h1,h2,h3{line-height:1.2;padding-top: 14px;}");
-  }
-  fprintf(stdout, "</style></head><body>");
+    // Replace stdout with file output for each HTML file
+    char output_filename[1024];
+    snprintf(output_filename, sizeof(output_filename), "%s.html", filename);
+    FILE *out = fopen(output_filename, "wb");
+    if (!out) {
+        fprintf(stderr, "Failed to open output file: %s\n", output_filename);
+        fclose(in);
+        return;
+    }
 
-  // define custom header template here
-  fprintf(stdout, "<p>custom header injected from odie automatically</p>");
+    fprintf(out, "<html><head><meta charset=\"utf-8\"><style>");
+    FILE *css = fopen("custom.css", "rb"); // assuming custom.css is the name of your CSS file
+    if (css) {
+        write_fp(out, css);
+        fclose(css);
+    } else {
+        fprintf(out,
+                "body{margin:60 auto;max-width:750px;line-height:1.6;"
+                "font-family:Open Sans,Arial;color:#444;padding:0 10px;}"
+                "h1,h2,h3{line-height:1.2;padding-top: 14px;}");
+    }
+    fprintf(out, "</style></head><body>");
 
-  char line[4096];
-  int flags = 0;
-  while (fgets(line, sizeof(line), in)) {
-    flags = process_line(stdout, line, flags);
-  }
+    // Custom header template
+    fprintf(out, "<header><p>Custom Header</p></header>");
 
-  // define custom footer template here
-  fprintf(stdout, "<footer>custom footer injected from odie automatically</footer></body></html>\n");
-  return 0;
+    char line[4096];
+    int flags = 0;
+    while (fgets(line, sizeof(line), in)) {
+        flags = process_line(out, line, flags);
+    }
+
+    // Custom footer template
+    fprintf(out, "<footer>custom footer injected from odie automatically</footer></body></html>\n");
+
+    // Close files
+    fclose(in);
+    fclose(out);
+}
+
+static void process_directory(const char *dir_name) {
+    DIR *dir;
+    struct dirent *entry;
+
+    dir = opendir(dir_name);
+    if (!dir) {
+        fprintf(stderr, "Cannot open directory: %s\n", dir_name);
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/%s", dir_name, entry->d_name);
+        struct stat statbuf;
+        stat(path, &statbuf);
+
+        if (S_ISDIR(statbuf.st_mode)) {
+            if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                // Recursive call for subdirectories
+                process_directory(path);
+            }
+        } else {
+            if (strstr(entry->d_name, ".md")) {
+                process_file(path);
+            }
+        }
+    }
+    closedir(dir);
+}
+
+int main(int argc, char **argv) {
+    if (argc != 1) {
+        fprintf(stderr, "Usage: %s\n", argv[0]);
+        return 1;
+    }
+
+    process_directory(".");
+
+    return 0;
 }
