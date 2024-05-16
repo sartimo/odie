@@ -2,6 +2,20 @@
 
 zero dependency blogging engine
 
+## how to use
+
+```bash
+gcc odie.c -o odie
+```
+
+write markdown files and place them in the same dir as the odie binary. then run ./odie and serve using something like that:
+
+```bash
+python3 -m http.server
+```
+
+then browse to localhost:8000.
+
 ## everything you need
 
 ### different heading levels
